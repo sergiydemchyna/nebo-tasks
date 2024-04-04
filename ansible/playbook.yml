@@ -1,0 +1,43 @@
+---
+- name: Configure LVM
+  hosts: azure_vms
+  become: true
+  vars:
+    new_disk: "/dev/sdd"  
+    vg_name: "vg_var"
+    lv_name: "lv_var"
+    mount_point: "/mnt/new_var"
+    target_mount_point: "/var"
+  tasks:
+    - name: Create physical volume
+      command: pvcreate --yes {{ new_disk }}
+      ignore_errors: yes
+
+    - name: Create volume group
+      command: vgcreate --force {{ vg_name }} {{ new_disk }}
+      ignore_errors: yes
+
+    - name: Create logical volume
+      command: lvcreate --extents 100%FREE --name {{ lv_name }} {{ vg_name }}
+      ignore_errors: yes
+
+    - name: Format logical volume as ext4
+      command: mkfs.ext4 /dev/mapper/{{ vg_name }}-{{ lv_name }}
+      ignore_errors: yes
+
+    - name: Mount logical volume temporarily
+      mount:
+        path: "{{ mount_point }}"
+        src: "/dev/mapper/{{ vg_name }}-{{ lv_name }}"
+        fstype: ext4
+        state: mounted
+
+    - name: Copy /var content to new mount point
+      command: rsync -a /var/ {{ mount_point }}/var/
+
+    - name: Update /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        line: "/dev/mapper/{{ vg_name }}-{{ lv_name }} {{ target_mount_point }} ext4 defaults 0 0"
+        state: present
+
