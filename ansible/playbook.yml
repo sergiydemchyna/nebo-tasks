@@ -1,29 +1,38 @@
 ---
-- name: Configure LVM
-  hosts: azure_vms
+- name: Configure LVM for /var
+  hosts: azure_vm
   become: true
   vars:
-    new_disk: "/dev/sdd"  
+    new_disk: "/dev/sdb"   # Modify this to the appropriate disk
     vg_name: "vg_var"
     lv_name: "lv_var"
     mount_point: "/mnt/new_var"
     target_mount_point: "/var"
   tasks:
-    - name: Create physical volume
+    - name: Check if physical volume is initialized
+      command: pvdisplay {{ new_disk }}
+      register: pv_display
+
+    - name: Skip LVM setup if physical volume is initialized
+      set_fact:
+        skip_lvm_setup: true
+      when: pv_display.rc == 0
+
+    - name: Create physical volume if not initialized
       command: pvcreate --yes {{ new_disk }}
-      ignore_errors: yes
+      when: not skip_lvm_setup|default(false)
 
     - name: Create volume group
       command: vgcreate --force {{ vg_name }} {{ new_disk }}
-      ignore_errors: yes
+      when: not skip_lvm_setup|default(false)
 
     - name: Create logical volume
       command: lvcreate --extents 100%FREE --name {{ lv_name }} {{ vg_name }}
-      ignore_errors: yes
+      when: not skip_lvm_setup|default(false)
 
     - name: Format logical volume as ext4
       command: mkfs.ext4 /dev/mapper/{{ vg_name }}-{{ lv_name }}
-      ignore_errors: yes
+      when: not skip_lvm_setup|default(false)
 
     - name: Mount logical volume temporarily
       mount:
@@ -31,13 +40,27 @@
         src: "/dev/mapper/{{ vg_name }}-{{ lv_name }}"
         fstype: ext4
         state: mounted
+      when: not skip_lvm_setup|default(false)
 
     - name: Copy /var content to new mount point
       command: rsync -a /var/ {{ mount_point }}/var/
+      when: not skip_lvm_setup|default(false)
+
+    - name: Unmount temporary mount point
+      mount:
+        path: "{{ mount_point }}"
+        state: unmounted
+      when: not skip_lvm_setup|default(false)
 
     - name: Update /etc/fstab
       lineinfile:
         path: /etc/fstab
         line: "/dev/mapper/{{ vg_name }}-{{ lv_name }} {{ target_mount_point }} ext4 defaults 0 0"
         state: present
+      when: not skip_lvm_setup|default(false)
 
+    - name: Mount /var
+      mount:
+        path: "{{ target_mount_point }}"
+        state: mounted
+      when: not skip_lvm_setup|default(false)
