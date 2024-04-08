@@ -1,0 +1,42 @@
+---
+- name: Create partitions
+  hosts: azure_vm
+  become: true
+  tasks:
+    - name: Create partition
+      parted:
+        device: /dev/sde
+        number: 1
+        flags: [lvm]
+        state: present
+        part_end: 2GB
+
+    - name: Create PV and VG
+      lvg:
+        vg: my_vg
+        pvs: /dev/sde1
+        pesize: 16
+
+    - name: Create LV
+      lvol:
+        vg: my_vg
+        lv: my_lv
+        size: 1G
+
+    - name: Format LV as ext4
+      filesystem:
+        fstype: ext4
+        dev: /dev/my_vg/my_lv
+
+    - name: Mount LV
+      mount:
+        path: /var
+        src: /dev/my_vg/my_lv
+        fstype: ext4
+        state: mounted
+        opts: defaults
+
+    - name: Add entry to /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        line: "/dev/my_vg/my_lv /var ext4 defaults 0 0"
