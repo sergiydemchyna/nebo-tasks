@@ -1,0 +1,35 @@
+---
+- name: Install and configure Elasticsearch
+  hosts: my_elasticsearch_servers
+  become: yes
+
+  tasks:
+    - name: Install Java
+      apt:
+        name: openjdk-11-jre-headless
+        state: present
+      tags: java
+
+    - name: Add Elasticsearch GPG key
+      apt_key:
+        url: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+      tags: elasticsearch
+
+    - name: Add Elasticsearch APT repository
+      apt_repository:
+        repo: "deb https://artifacts.elastic.co/packages/7.x/apt stable main"
+        state: present
+      tags: elasticsearch
+
+    - name: Install Elasticsearch
+      apt:
+        name: elasticsearch
+        state: present
+      tags: elasticsearch
+
+    - name: Start and enable Elasticsearch service
+      systemd:
+        name: elasticsearch
+        enabled: yes
+        state: started
+      tags: elasticsearch
